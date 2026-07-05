@@ -1,45 +1,35 @@
-/**
- * Sample React Native App
- * https://github.com/facebook/react-native
- *
- * @format
- */
+import React, { useState } from 'react';
+import { AppProvider } from './src/context/AppContext';
+import SplashScreen from './src/screens/SplashScreen';
+import HomeScreen from './src/screens/HomeScreen';
+import ReceiptScreen from './src/screens/ReceiptScreen';
 
-import { NewAppScreen } from '@react-native/new-app-screen';
-import { StatusBar, StyleSheet, useColorScheme, View } from 'react-native';
-import {
-  SafeAreaProvider,
-  useSafeAreaInsets,
-} from 'react-native-safe-area-context';
+export default function App() {
+  const [currentScreen, setCurrentScreen] = useState<'Splash' | 'Home' | 'Receipt'>('Splash');
+  const [activeOrderData, setActiveOrderData] = useState<any>(null);
 
-function App() {
-  const isDarkMode = useColorScheme() === 'dark';
+  const navigateToReceipt = (orderData: any) => {
+    setActiveOrderData(orderData);
+    setCurrentScreen('Receipt');
+  };
 
   return (
-    <SafeAreaProvider>
-      <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
-      <AppContent />
-    </SafeAreaProvider>
+    <AppProvider>
+      {currentScreen === 'Splash' && (
+        <SplashScreen navigation={{ replace: () => setCurrentScreen('Home') }} />
+      )}
+      {currentScreen === 'Home' && (
+        <HomeScreen onOrderSubmit={navigateToReceipt} />
+      )}
+      {currentScreen === 'Receipt' && (
+        <ReceiptScreen 
+          orderData={activeOrderData} 
+          onBackToHome={() => {
+            setActiveOrderData(null);
+            setCurrentScreen('Home');
+          }} 
+        />
+      )}
+    </AppProvider>
   );
 }
-
-function AppContent() {
-  const safeAreaInsets = useSafeAreaInsets();
-
-  return (
-    <View style={styles.container}>
-      <NewAppScreen
-        templateFileName="App.tsx"
-        safeAreaInsets={safeAreaInsets}
-      />
-    </View>
-  );
-}
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-});
-
-export default App;
