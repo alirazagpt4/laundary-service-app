@@ -3,77 +3,32 @@ import React, { useState, useEffect } from 'react';
 import { StyleSheet, View, FlatList, ScrollView, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Appbar, Button, Text, Card, IconButton, ActivityIndicator, Surface, TouchableRipple } from 'react-native-paper';
-import { apiService } from '../api/apiService';
+import { useApp } from '../context/AppContext';
 import { globalStyles } from '../theme/styles';
 
 interface SelectItemsProps {
-  routePayload: any; // Contains customer payload from HomeScreen
+  routePayload: any; 
   onBack: () => void;
   onNext: (finalPayload: any) => void;
 }
 
-interface PriceItem {
-  id: string;
-  item_id: string;
-  service_option_id: string;
-  price: number;
-  currency_code: string;
-}
-
-interface CatalogItem {
-  id: string;
-  category_id: string;
-  name: string;
-  code: string;
-  prices: PriceItem[];
-}
-
-interface Category {
-  id: string;
-  name: string;
-  code: string;
-  items: CatalogItem[];
-}
-
 export default function SelectItemsScreen({ routePayload, onBack, onNext }: SelectItemsProps) {
-  const [loading, setLoading] = useState<boolean>(true);
-  const [categories, setCategories] = useState<Category[]>([]);
+  // CONSUME PERSISTENT ARCHITECTURE FROM GLOBAL ENGINE
+  const { 
+    categories, 
+    quantities, 
+    setQuantities, 
+    isCatalogLoading 
+  } = useApp();
+
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>('');
-  
-  // State Matrix: Key format -> "categoryID_itemID" to explicitly isolate quantities globally
-  const [quantities, setQuantities] = useState<{ [key: string]: number }>({});
 
+  // Fallback structural selection for the initial index layer
   useEffect(() => {
-    bootstrapCatalogEngine();
-  }, []);
-
- const bootstrapCatalogEngine = async () => {
-  try {
-    setLoading(true);
-    const response = await apiService.get('/catalog/full');
-    
-    // Debug log to check what the server is actually sending
-    console.log("SERVER CATALOG DEEP LOG:", JSON.stringify(response.data));
-
-    // Fallback logic: check both response.data.data AND response.data directly
-    const catalogData = response.data?.data || response.data || [];
-    
-    // Safeguard: If is_active is missing in DB, fallback to true so it doesn't hide items during development
-    const validCategories = catalogData.filter((cat: any) => {
-      return cat.is_active === undefined ? true : cat.is_active;
-    });
-    
-    setCategories(validCategories);
-    if (validCategories.length > 0) {
-      setSelectedCategoryId(validCategories[0].id);
+    if (categories.length > 0 && !selectedCategoryId) {
+      setSelectedCategoryId(categories[0].id);
     }
-  } catch (error) {
-    console.error("CATALOG FETCH ERROR:", error);
-    Alert.alert("Data Stream Error", "Failed to fetch master laundry catalog mapping.");
-  } finally {
-    setLoading(false);
-  }
-};
+  }, [categories, selectedCategoryId]);
 
   const activeCategory = categories.find(cat => cat.id === selectedCategoryId);
 
@@ -96,7 +51,6 @@ export default function SelectItemsScreen({ routePayload, onBack, onNext }: Sele
         const currentQty = quantities[key] || 0;
 
         if (currentQty > 0) {
-          // Dynamic evaluation check for item base pricing structure
           const basePrice = item.prices && item.prices.length > 0 ? item.prices[0].price : 0;
           const totalCalculatedItemCost = basePrice * currentQty;
           
@@ -122,9 +76,8 @@ export default function SelectItemsScreen({ routePayload, onBack, onNext }: Sele
       return;
     }
 
-    // High performance mutation merge logic
     const finalPipelinePayload = {
-      customerData: routePayload, // Old state tracking payload retained seamlessly
+      customerData: routePayload, 
       orderedItems: selectedItemsBreakdown,
       financials: {
         grossTotal: orderTotalAccumulator,
@@ -135,7 +88,7 @@ export default function SelectItemsScreen({ routePayload, onBack, onNext }: Sele
     onNext(finalPipelinePayload);
   };
 
-  if (loading) {
+  if (isCatalogLoading) {
     return (
       <View style={styles.centerEngine}>
         <ActivityIndicator size="large" color="#6366F1" />
@@ -167,6 +120,7 @@ export default function SelectItemsScreen({ routePayload, onBack, onNext }: Sele
                   style={styles.chipTouch}
                   accessibilityRole="tab"
                   accessibilityState={{ selected: isSelected }}
+                  accessibilityLabel={`${category.name} Category`}
                 >
                   <Text style={[styles.chipText, isSelected && styles.activeChipText]}>
                     {category.name}
@@ -206,13 +160,22 @@ export default function SelectItemsScreen({ routePayload, onBack, onNext }: Sele
                     size={32}
                     disabled={currentItemQty === 0}
                     onPress={() => updateQuantity(selectedCategoryId, item.id, 'DEC')}
+                    accessibilityLabel={`Decrease operational quantity for ${item.name}`}
+                    accessibilityHint={`Current layout count value is ${currentItemQty}`}
                   />
-                  <Text style={styles.quantityDisplayValue}>{currentItemQty}</Text>
+                  <Text 
+                    style={styles.quantityDisplayValue}
+                    accessibilityLiveRegion="polite"
+                  >
+                    {currentItemQty}
+                  </Text>
                   <IconButton
                     icon="plus-box"
                     iconColor="#6366F1"
                     size={32}
                     onPress={() => updateQuantity(selectedCategoryId, item.id, 'INC')}
+                    accessibilityLabel={`Increase operational quantity for ${item.name}`}
+                    accessibilityHint={`Current layout count value is ${currentItemQty}`}
                   />
                 </View>
               </View>

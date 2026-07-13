@@ -4,7 +4,6 @@ import { StyleSheet, View, ScrollView, Alert, Linking } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Appbar, Button, Text, Surface, Divider } from 'react-native-paper';
 import RNPrint from 'react-native-print';
-import Share from 'react-native-share';
 
 interface ReceiptScreenProps {
   orderData: {
@@ -26,7 +25,7 @@ interface ReceiptScreenProps {
 export default function ReceiptScreen({ orderData, onBackToHome }: ReceiptScreenProps) {
   if (!orderData) return null;
 
-  // HTML Blueprint String
+  // HTML Blueprint String for Printing Spooler
   const generateHtmlTemplate = () => {
     const rows = orderData.items
       .map(
@@ -81,7 +80,7 @@ export default function ReceiptScreen({ orderData, onBackToHome }: ReceiptScreen
     `;
   };
 
-  // 1. DIRECT NATIVE OS PRINTING (No C++ compilation needed)
+  // 1. SYSTEM PRINT ENGINE
   const handleSystemPrint = async () => {
     try {
       const html = generateHtmlTemplate();
@@ -91,7 +90,7 @@ export default function ReceiptScreen({ orderData, onBackToHome }: ReceiptScreen
     }
   };
 
-  // 2. WHATSAPP DEEP LINK
+  // 2. WHATSAPP TRANSACTION LINK PIPELINE
   const handleWhatsAppShare = async () => {
     let phone = orderData.customerPhone ? orderData.customerPhone.trim() : '';
     if (!phone) {
@@ -108,7 +107,7 @@ export default function ReceiptScreen({ orderData, onBackToHome }: ReceiptScreen
     const message = `*AWAIS DRY CLEANERS*\n\n` +
                     `*Order No:* ${orderData.orderNo}\n` +
                     `*Date:* ${orderData.date}\n` +
-                    `*Customer:* ${orderData.customerName}\n` +
+                    `*Customer:* ${orderData.customerName || 'Walk-in'}\n` +
                     `---------------------------\n` +
                     orderData.items.map(i => `${i.name} x ${i.qty} = Rs. ${i.price * i.qty}`).join('\n') +
                     `\n---------------------------\n` +
@@ -136,29 +135,59 @@ export default function ReceiptScreen({ orderData, onBackToHome }: ReceiptScreen
       </Appbar.Header>
 
       <ScrollView style={styles.scrollBody} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        <Surface style={styles.receiptCard} elevation={1}>
-          <Text style={styles.bankHeader}>TRANSACTION RECEIPT</Text>
+        <Surface 
+          style={styles.receiptCard} 
+          elevation={1}
+          accessible={true}
+          accessibilityLabel={`Receipt Details for Order Number ${orderData.orderNo}. Customer name is ${orderData.customerName || 'Walk-in Client'}. Issued on ${orderData.date}`}
+        >
+          <Text style={styles.bankHeader} accessibilityRole="header">TRANSACTION RECEIPT</Text>
           <Text style={styles.brandTitle}>AWAIS DRY CLEANERS</Text>
           
-          <Divider style={styles.dashedLine} />
+          <Divider style={styles.dashedLine} importantForAccessibility="no" />
           
-          <View style={styles.metaRow}><Text style={styles.label}>Order No:</Text><Text style={styles.value}>{orderData.orderNo}</Text></View>
-          <View style={styles.metaRow}><Text style={styles.label}>Date:</Text><Text style={styles.value}>{orderData.date}</Text></View>
-          <View style={styles.metaRow}><Text style={styles.label}>Customer:</Text><Text style={styles.value}>{orderData.customerName || 'Walk-in Client'}</Text></View>
-          <View style={styles.metaRow}><Text style={styles.label}>Status:</Text><Text style={[styles.value, styles.statusPaid]}>PAID</Text></View>
+          <View style={styles.metaRow} accessible={true} accessibilityLabel={`Order number is ${orderData.orderNo}`}>
+            <Text style={styles.label}>Order No:</Text>
+            <Text style={styles.value}>{orderData.orderNo}</Text>
+          </View>
+          <View style={styles.metaRow} accessible={true} accessibilityLabel={`Transaction date is ${orderData.date}`}>
+            <Text style={styles.label}>Date:</Text>
+            <Text style={styles.value}>{orderData.date}</Text>
+          </View>
+          <View style={styles.metaRow} accessible={true} accessibilityLabel={`Customer name is ${orderData.customerName || 'Walk-in Client'}`}>
+            <Text style={styles.label}>Customer:</Text>
+            <Text style={styles.value}>{orderData.customerName || 'Walk-in Client'}</Text>
+          </View>
+          <View style={styles.metaRow} accessible={true} accessibilityLabel="Payment status is paid">
+            <Text style={styles.label}>Status:</Text>
+            <Text style={[styles.value, styles.statusPaid]}>PAID</Text>
+          </View>
           
-          <Divider style={styles.dashedLine} />
+          <Divider style={styles.dashedLine} importantForAccessibility="no" />
           
-          {orderData.items.map((item: any, idx: number) => (
-            <View key={item.id || String(idx)} style={styles.itemBillRow}>
-              <Text style={styles.billItemDesc}>{item.name} x {item.qty}</Text>
-              <Text style={styles.billItemPrice}>Rs. {item.price * item.qty}</Text>
-            </View>
-          ))}
+          {/* ITEMS LISTING LOOP - COMPACTED MATRIX FOR SCREEN READERS */}
+          {orderData.items.map((item: any, idx: number) => {
+            const itemTotalCost = item.price * item.qty;
+            return (
+              <View 
+                key={item.id || String(idx)} 
+                style={styles.itemBillRow}
+                accessible={true}
+                accessibilityLabel={`${item.qty} quantity of ${item.name}, individual item pricing Rs. ${item.price}, net total item price Rs. ${itemTotalCost}`}
+              >
+                <Text style={styles.billItemDesc}>{item.name} x {item.qty}</Text>
+                <Text style={styles.billItemPrice}>Rs. {itemTotalCost}</Text>
+              </View>
+            );
+          })}
           
-          <Divider style={styles.dashedLine} />
+          <Divider style={styles.dashedLine} importantForAccessibility="no" />
           
-          <View style={styles.totalReceiptRow}>
+          <View 
+            style={styles.totalReceiptRow}
+            accessible={true}
+            accessibilityLabel={`Final grand calculated invoice total amount is Rupees ${orderData.total}`}
+          >
             <Text style={styles.grandLabel}>TOTAL AMOUNT</Text>
             <Text style={styles.grandValue}>Rs. {orderData.total}</Text>
           </View>
@@ -171,6 +200,8 @@ export default function ReceiptScreen({ orderData, onBackToHome }: ReceiptScreen
             onPress={handleSystemPrint} 
             style={[styles.actionBtn, { backgroundColor: '#3B82F6' }]}
             labelStyle={styles.btnLabel}
+            accessibilityRole="button"
+            accessibilityLabel="Print receipt or save statement as PDF document artifact"
           >
             Print / Save PDF
           </Button>
@@ -181,6 +212,8 @@ export default function ReceiptScreen({ orderData, onBackToHome }: ReceiptScreen
             onPress={handleWhatsAppShare} 
             style={[styles.actionBtn, { backgroundColor: '#10B981' }]}
             labelStyle={styles.btnLabel}
+            accessibilityRole="button"
+            accessibilityLabel="Send transaction statement invoice directly to customer WhatsApp wire"
           >
             Send WhatsApp
           </Button>
@@ -191,6 +224,8 @@ export default function ReceiptScreen({ orderData, onBackToHome }: ReceiptScreen
             onPress={onBackToHome} 
             style={styles.backHomeBtn}
             labelStyle={[styles.btnLabel, { color: '#6366F1' }]}
+            accessibilityRole="button"
+            accessibilityLabel="Flush current statement memory and trigger workflow back to dashboard console"
           >
             Create New Order
           </Button>

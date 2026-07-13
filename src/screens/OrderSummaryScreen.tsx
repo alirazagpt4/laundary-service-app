@@ -4,71 +4,98 @@ import { StyleSheet, View, ScrollView, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Appbar, Button, Text, Card, Divider, Surface, ActivityIndicator } from 'react-native-paper';
 import { apiService } from '../api/apiService';
+import { useApp } from '../context/AppContext'; 
 
 interface OrderSummaryProps {
-  routePayload: {
-    customerData: any;
-    selectedItems: Array<{
-      id: string;
-      name: string;
-      quantity: number;
-      basePrice: number;
-      serviceOptionId: string | null;
-    }>;
-  };
   onBack: () => void;
   onOrderSuccess: (receiptData: any) => void;
 }
 
-export default function OrderSummaryScreen({ routePayload, onBack, onOrderSuccess }: OrderSummaryProps) {
+export default function OrderSummaryScreen({ onBack, onOrderSuccess }: OrderSummaryProps) {
+  const { customerData, quantities, catalog } = useApp(); 
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   
- console.log("SUMMARY SCREEN INCOMING PAYLOAD:", JSON.stringify(routePayload, null, 2));
+  // Reconstruct Items List with absolute index-based split matrix
+  const itemsList = useMemo(() => {
+    if (!quantities || !catalog || catalog.length === 0) return [];
+    
+    return Object.keys(quantities)
+      .map((compositeKey) => {
+        const qty = quantities[compositeKey] || 0;
+        if (qty <= 0) return null; 
 
-// 1. Safe Fallback Destruction to explicitly secure runtime checks
-const customerData = routePayload?.customerData || {};
+        const parts = compositeKey.split('_');
+        // CRITICAL REVERSAL FIX: The item ID resides strictly at index 1 of your selection matrix!
+        const parsedItemId = parts[1] || parts[0]; 
+        const categoryId = parts[0];
 
-// CRITICAL PIPELINE FIX: Naming contract alignment to capture upstream data safely
-const rawItems = routePayload?.orderedItems || routePayload?.selectedItems;
-const itemsList = Array.isArray(rawItems) ? rawItems : [];
+        // Structural match against flat cached catalog elements
+        const catalogItem = catalog.find((c: any) => {
+          return (
+            String(c.id) === String(parsedItemId) || 
+            String(c.item_id) === String(parsedItemId) ||
+            String(c.code) === String(parsedItemId)
+          );
+        });
 
-// FIXED: Using itemsList with an explicit array guard to eliminate runtime reduce() crashes
-const grandTotal = useMemo(() => {
-  return itemsList.reduce((acc, item) => {
-    // Upstream support: handle both 'basePrice' and 'unitPrice' properties seamlessly
-    const currentPrice = item.basePrice || item.unitPrice || 0;
-    return acc + (currentPrice * (item.quantity || 0));
-  }, 0);
-}, [itemsList]);
+        if (!catalogItem) return null;
+
+        // Extract pricing data safely
+        let itemPrice = 0;
+        if (catalogItem.prices && catalogItem.prices.length > 0) {
+          itemPrice = Number(catalogItem.prices[0].price || 0);
+        } else if (catalogItem.price) {
+          itemPrice = Number(catalogItem.price);
+        }
+
+        return {
+          id: compositeKey, 
+          itemId: catalogItem.id,
+          name: catalogItem.name || "Laundry Item",
+          itemName: catalogItem.name || "Laundry Item",
+          quantity: qty,
+          unitPrice: itemPrice,
+          serviceOptionId: catalogItem.prices?.[0]?.service_option_id || "default-option-id"
+        };
+      })
+      .filter((item): item is NonNullable<typeof item> => item !== null);
+  }, [quantities, catalog]);
+
+  const grandTotal = useMemo(() => {
+    return itemsList.reduce((acc, item) => acc + (item.unitPrice * item.quantity), 0);
+  }, [itemsList]);
 
   const handleOrderCommit = async () => {
+    if (itemsList.length === 0) {
+      Alert.alert("Execution Blocked", "Your active items cart ledger is empty.");
+      return;
+    }
+
     try {
       setIsSubmitting(true);
-
-     const finalServerPayload = {
+      const finalServerPayload = {
         address: {
-          areaId: "area-uuid-default",
+          areaId: "10c3fd4e-23d3-4bd9-97bf-2ee93de70b7e",
           addressLine1: "Walk-in Counter Pickup",
           city: "Khurrianwala",
           instructions: "Standard processing"
         },
         items: itemsList.map(item => ({
-          itemId: item.id,
-          serviceOptionId: item.serviceOptionId || "default-option-id",
+          itemId: item.itemId,
+          serviceOptionId: item.serviceOptionId,
           quantity: item.quantity
         })),
         schedule: {
-          pickupDate: customerData.orderDate || new Date().toISOString().split('T')[0],
-          pickupSlotId: "time-slot-uuid-1",
-          deliveryDate: customerData.deliveryDate || new Date().toISOString().split('T')[0],
-          deliverySlotId: "time-slot-uuid-2"
+          pickupDate: customerData?.orderDate || new Date().toISOString().split('T')[0],
+          pickupSlotId: "d4d04f4b-748c-4d0b-9b5f-5f4b00cf9db8",
+          deliveryDate: customerData?.deliveryDate || new Date().toISOString().split('T')[0],
+          deliverySlotId: "f3648632-2e9a-44ed-88fc-5f6dd151c009"
         },
-        // --- UPDATED CONTACT LAYER WITH RAW SPLIT DATA ---
         contact: {
-          firstName: customerData.firstName || "Walk-in", // HomeScreen se split kiya hua firstName
-          lastName: customerData.lastName || "Customer",  // HomeScreen se split kiya hua lastName
+          firstName: customerData?.customerName?.split(' ')[0] || "Walk-in",
+          lastName: customerData?.customerName?.split(' ')[1] || "Customer",
           email: "customer@laundry.com",
-          phone: customerData.phoneNumber || "03001234567"
+          phone: customerData?.phoneNumber || "03001234567"
         },
         couponCode: "WELCOME25",
         specialInstructions: "Standard Care",
@@ -79,15 +106,18 @@ const grandTotal = useMemo(() => {
       const response = await apiService.post('/orders', finalServerPayload);
 
       if (response.status === 201 || response.status === 200) {
-        onOrderSuccess(response.data?.data || response.data);
-      } else {
-        throw new Error(`Unexpected server status code: ${response.status}`);
+        const responseData = response.data?.data || response.data;
+        onOrderSuccess({
+          orderNo: responseData?.orderNo || responseData?.id || `ORD-${Date.now().toString().slice(-6)}`,
+          date: customerData?.orderDate || new Date().toISOString().split('T')[0],
+          customerName: customerData?.customerName || 'Walk-in Client',
+          customerPhone: customerData?.phoneNumber || '03001234567',
+          total: grandTotal,
+          items: itemsList.map(i => ({ id: i.id, name: i.name, qty: i.quantity, price: i.unitPrice }))
+        });
       }
     } catch (error: any) {
-      Alert.alert(
-        "Order Failed",
-        error.response?.data?.message || "Failed to commit order mutation to database ledger."
-      );
+      Alert.alert("Order Failed", error.response?.data?.message || "Failed to commit order mutation.");
     } finally {
       setIsSubmitting(false);
     }
@@ -101,22 +131,21 @@ const grandTotal = useMemo(() => {
       </Appbar.Header>
 
       <ScrollView contentContainerStyle={styles.scrollContainer}>
-        <Text style={styles.sectionHeading}>Customer</Text>
+        <Text style={styles.sectionHeading} accessibilityRole="header">Customer Profile</Text>
         <Card style={styles.infoCard} mode="flat">
           <Card.Content>
             <View style={styles.infoRow}>
-              <Text style={styles.customerName}>
-                {`${customerData.firstName || ''} ${customerData.lastName || ''}`.trim() || 'Client Profile'}
-              </Text>
-              <Text style={styles.dateText}>Order: {customerData.pickupDate || 'Today'}</Text>
+              <Text style={styles.customerName}>{customerData?.customerName || 'Client Profile'}</Text>
+              <Text style={styles.dateText}>Order: {customerData?.orderDate || 'Today'}</Text>
             </View>
             <View style={styles.infoRow}>
-              <Text style={styles.phoneText}>{customerData.phone || customerData.phoneNumber || 'N/A'}</Text>
-              <Text style={styles.dateText}>Delivery: {customerData.deliveryDate || 'Pending'}</Text>
+              <Text style={styles.phoneText}>{customerData?.phoneNumber || 'N/A'}</Text>
+              <Text style={styles.dateText}>Delivery: {customerData?.deliveryDate || 'Pending'}</Text>
             </View>
           </Card.Content>
         </Card>
 
+        <Text style={styles.sectionHeading} accessibilityRole="header">Invoice Ledger Items</Text>
         <Surface style={styles.tableSurface} elevation={0}>
           <View style={[styles.tableRow, styles.tableHeader]}>
             <Text style={[styles.col, styles.colMain, styles.headerText]}>Item</Text>
@@ -126,16 +155,23 @@ const grandTotal = useMemo(() => {
           </View>
           <Divider />
 
-          {itemsList.map((item, index) => (
-            <View key={item.id || String(index)} style={styles.tableRow}>
-              <Text style={[styles.col, styles.colMain, styles.cellText]}>{item.name}</Text>
-              <Text style={[styles.col, styles.colQty, styles.cellText, styles.textCenter]}>{item.quantity}</Text>
-              <Text style={[styles.col, styles.colRate, styles.cellText, styles.textRight]}>{item.basePrice}</Text>
-              <Text style={[styles.col, styles.colTotal, styles.cellText, styles.textRight]}>
-                {(item.basePrice || 0) * (item.quantity || 0)}
-              </Text>
+          {itemsList.length === 0 ? (
+            <View style={{ padding: 20, alignItems: 'center' }}>
+              <Text style={{ color: '#94A3B8', fontWeight: '600' }}>No active items selected.</Text>
             </View>
-          ))}
+          ) : (
+            itemsList.map((item) => {
+              const totalCost = item.unitPrice * item.quantity;
+              return (
+                <View key={item.id} style={styles.tableRow} accessible={true}>
+                  <Text style={[styles.col, styles.colMain, styles.cellText]}>{item.name}</Text>
+                  <Text style={[styles.col, styles.colQty, styles.cellText, styles.textCenter]}>{item.quantity}</Text>
+                  <Text style={[styles.col, styles.colRate, styles.cellText, styles.textRight]}>Rs. {item.unitPrice}</Text>
+                  <Text style={[styles.col, styles.colTotal, styles.cellText, styles.textRight]}>Rs. {totalCost}</Text>
+                </View>
+              );
+            })
+          )}
         </Surface>
 
         <Surface style={styles.grandTotalSurface} elevation={0}>
@@ -151,7 +187,8 @@ const grandTotal = useMemo(() => {
           <Button
             mode="contained"
             onPress={handleOrderCommit}
-            style={styles.actionButton}
+            disabled={itemsList.length === 0}
+            style={[styles.actionButton, itemsList.length === 0 && { backgroundColor: '#CBD5E1' }]}
             contentStyle={styles.actionButtonContent}
           >
             CONFIRM & PLACE ORDER

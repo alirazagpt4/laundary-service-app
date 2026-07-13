@@ -7,7 +7,7 @@ import LoginScreen from './src/screens/LoginScreen';
 import HomeScreen from './src/screens/HomeScreen';
 import ReceiptScreen from './src/screens/ReceiptScreen';
 import SelectItemsScreen from './src/screens/SelectedItemsScreen';
-import OrderSummaryScreen from './src/screens/OrderSummaryScreen'; // IMPORT NEW LAYER
+import OrderSummaryScreen from './src/screens/OrderSummaryScreen';
 
 const theme = {
   ...MD3LightTheme,
@@ -18,18 +18,15 @@ const theme = {
   },
 };
 
-// Strict State Types for Pipeline Navigation
+// Strict State Types for Pipeline Navigation Matrix
 type ScreenState = 'AuthGate' | 'Dashboard' | 'SelectItems' | 'OrderSummary' | 'Receipt';
 
 function RootNavigation() {
-  const { isAuthenticated, authLoading } = useApp();
+  const { isAuthenticated, authLoading, customerData, clearOrderCache } = useApp();
   const [currentScreen, setCurrentScreen] = useState<ScreenState>('AuthGate');
   const [activeOrderData, setActiveOrderData] = useState<any>(null);
-  
-  // Pipeline Buffers to accumulate state layers across screens
-  const [customerPayload, setCustomerPayload] = useState<any>(null);
-  const [combinedSummaryPayload, setCombinedSummaryPayload] = useState<any>(null);
 
+  // Sync Navigation Gate with Global Authentication State Matrix
   useEffect(() => {
     if (!authLoading) {
       if (isAuthenticated) {
@@ -55,40 +52,36 @@ function RootNavigation() {
         <LoginScreen />
       )}
 
-      {/* 2. HOME SCREEN: Gathers Customer, Address, and Schedule Meta */}
+      {/* 2. HOME SCREEN: Mutates and Retains Customer Data in Context */}
       {currentScreen === 'Dashboard' && isAuthenticated && (
         <HomeScreen 
-          onOrderSubmit={(payload) => {
-            setCustomerPayload(payload); // Store Payload 1
+          onOrderSubmit={() => {
+            // No local allocation. Data is already preserved inside AppContext
             setCurrentScreen('SelectItems'); 
           }} 
         />
       )}
 
-      {/* 3. SELECT ITEMS SCREEN: Gathers Selected Items Matrix */}
+      {/* 3. SELECT ITEMS SCREEN: Quantities are globally bound to Context */}
       {currentScreen === 'SelectItems' && isAuthenticated && (
         <SelectItemsScreen 
-          routePayload={customerPayload}
+          routePayload={customerData} // Pass direct context state node reference
           onBack={() => setCurrentScreen('Dashboard')}
-          onNext={(selectedItemsArray) => {
-            // MERGE SYSTEM: Bundling Customer Meta and Selected Items together
-            setCombinedSummaryPayload({
-              customerData: customerPayload,
-              selectedItems: selectedItemsArray // Store Payload 2
-            });
-            setCurrentScreen('OrderSummary'); // Shift navigation focus forward
+          onNext={() => {
+            // Drop redundant payload bundling wrapper. Summary will parse Context directly.
+            setCurrentScreen('OrderSummary'); 
           }}
         />
       )}
 
-      {/* 4. ORDER SUMMARY SCREEN: Final review ledger & API mutations emitter */}
+      {/* 4. ORDER SUMMARY SCREEN: Pulls live data from Context and fires post mutations */}
       {currentScreen === 'OrderSummary' && isAuthenticated && (
         <OrderSummaryScreen
-          routePayload={combinedSummaryPayload}
+          routePayload={customerData}
           onBack={() => setCurrentScreen('SelectItems')}
           onOrderSuccess={(serverReceiptResponse) => {
-            setActiveOrderData(serverReceiptResponse); // Inject finalized backend write log
-            setCurrentScreen('Receipt'); // Pop view stack straight to transaction statement
+            setActiveOrderData(serverReceiptResponse); // Retain invoice footprint for display
+            setCurrentScreen('Receipt'); 
           }}
         />
       )}
@@ -98,11 +91,10 @@ function RootNavigation() {
         <ReceiptScreen
           orderData={activeOrderData}
           onBackToHome={() => {
-            // Memory Sweep: De-allocate dynamic memory states to prevent field bleeding
+            // CRITICAL RESET: Purge transactional order states globally to avoid payload bleeding
+            clearOrderCache();
             setActiveOrderData(null);
-            setCustomerPayload(null);
-            setCombinedSummaryPayload(null);
-            setCurrentScreen('Dashboard'); // Hard reset back to terminal home
+            setCurrentScreen('Dashboard'); // Hard reset back to terminal home state
           }}
         />
       )}

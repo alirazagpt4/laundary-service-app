@@ -1,9 +1,9 @@
 // src/screens/LoginScreen.tsx
 import React, { useState, useEffect, useRef } from 'react';
 import { 
-  StyleSheet, View, ActivityIndicator, Alert, SafeAreaView, Animated 
+  StyleSheet, View, Alert, SafeAreaView, Animated 
 } from 'react-native';
-import { TextInput, Button, Text } from 'react-native-paper'; // React Native Paper Core components
+import { TextInput, Button, Text } from 'react-native-paper'; 
 import { useApp } from '../context/AppContext';
 import { apiService } from '../api/apiService'; 
 import { globalStyles } from '../theme/styles';
@@ -13,7 +13,7 @@ export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const [isPasswordVisible, setIsPasswordVisible] = useState(false); // Dynamic eye-toggle tracking state
+  const [isPasswordVisible, setIsPasswordVisible] = useState(false); 
 
   // Animation Matrix Drivers
   const logoOpacity = useRef(new Animated.Value(0)).current;
@@ -57,7 +57,7 @@ export default function LoginScreen() {
         }),
       ]),
     ]).start();
-  }, []);
+  }, [logoOpacity, logoTranslateY, formOpacity, formTranslateY]);
 
   const handleNetworkLogin = async () => {
     const cleanEmail = email.trim();
@@ -75,6 +75,7 @@ export default function LoginScreen() {
 
       const { success, data, message } = response.data;
       if (success && data) {
+        // Await global state mutation and application catalog hydration completely
         await loginState({
           accessToken: data.accessToken,
           refreshToken: data.refreshToken,
@@ -93,7 +94,7 @@ export default function LoginScreen() {
 
   return (
     <SafeAreaView style={globalStyles.mainContainer}>
-      <View style={styles.centerEngine} accessible={true} accessibilityLabel="Security Access Layer">
+      <View style={styles.centerEngine}>
         
         {/* ANIMATED BRAND LOGO SECTION */}
         <Animated.View 
@@ -136,7 +137,8 @@ export default function LoginScreen() {
               style={styles.paperInput}
               contentStyle={styles.inputContent}
               disabled={loading}
-              accessibilityLabel="Input field for email address"
+              accessibilityLabel="Email Address Input Field"
+              accessibilityHint="Enter your registered corporate email profile"
             />
           </View>
 
@@ -157,13 +159,16 @@ export default function LoginScreen() {
               style={styles.paperInput}
               contentStyle={styles.inputContent}
               disabled={loading}
-              accessibilityLabel="Input field for account password"
+              accessibilityLabel="Account Password Input Field"
+              accessibilityHint="Enter your unique security password token string"
               right={
                 <TextInput.Icon 
                   icon={isPasswordVisible ? "eye-off" : "eye"} 
                   iconColor="#64748B"
                   onPress={() => setIsPasswordVisible(!isPasswordVisible)}
-                  accessibilityLabel="Toggle password visibility visibility strip"
+                  accessibilityLabel={isPasswordVisible ? "Hide password text strings" : "Reveal password text strings"}
+                  accessibilityRole="button"
+                  accessibilityState={{ checked: isPasswordVisible }}
                 />
               }
             />
@@ -178,9 +183,11 @@ export default function LoginScreen() {
             contentStyle={styles.submitButtonContent}
             loading={loading}
             accessibilityRole="button"
-            accessibilityLabel="Perform account login process validation"
+            accessibilityLabel={loading ? "Authenticating security token keys" : "Login access process button"}
+            accessibilityHint="Fires auth token verification endpoints across backend channels"
+            labelStyle={styles.submitButtonText}
           >
-            {!loading && <Text style={styles.submitButtonText}>Login</Text>}
+            Login
           </Button>
 
         </Animated.View>
@@ -193,7 +200,7 @@ const styles = StyleSheet.create({
   centerEngine: {
     flex: 1,
     justifyContent: 'center',
-    paddingHorizontal: 16, // Expanded slightly for balanced design proportions
+    paddingHorizontal: 16, 
   },
   logoWrapper: {
     alignItems: 'center',
